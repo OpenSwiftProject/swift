@@ -1158,7 +1158,7 @@ public:
     return substType->getParameters()[index];
   }
 
-  llvm::Value *getContext() { return origParams.claimNext(); }
+  virtual llvm::Value *getContext() { return origParams.claimNext(); }
 
   virtual llvm::Value *getDynamicFunctionPointer() = 0;
   virtual llvm::Value *getDynamicFunctionContext() = 0;
@@ -1304,6 +1304,12 @@ class AsyncPartialApplicationForwarderEmission
   Address context;
   Address calleeContextBuffer;
   unsigned currentArgumentIndex;
+  // Cached trailing pair extracted from origParams when outType's
+  // signature carries the [ind_error, swiftself] pair (see
+  // hasTrailingAsyncErrorContextPair). Populated in
+  // gatherArgumentsFromApply, read by getContext / forwardErrorResult.
+  llvm::Value *cachedContextSlot = nullptr;
+  llvm::Value *cachedTypedErrorSlot = nullptr;
   struct Self {
     enum class Kind {
       Method,
@@ -1396,6 +1402,16 @@ public:
   }
   void gatherArgumentsFromApply() override {
     super::gatherArgumentsFromApply(true);
+    // Coupled with expandAsyncEntryType layout. Shared gate:
+    // hasTrailingAsyncErrorContextPair, queried on outType because
+    // origParams holds the FORWARDER's own params (signature built from
+    // outType). Layout-time order under the new entry layout is
+    // [..., ind_error, swiftself]; takeLast pops swiftself first,
+    // ind_error second.
+    if (irgen::hasTrailingAsyncErrorContextPair(IGM, outType)) {
+      cachedContextSlot = origParams.takeLast();      // swiftself
+      cachedTypedErrorSlot = origParams.takeLast();   // ind_error
+    }
   }
   llvm::Value *getDynamicFunctionPointer() override { return args.takeLast(); }
   llvm::Value *getDynamicFunctionContext() override {
@@ -1406,6 +1422,15 @@ public:
   }
   void addDynamicFunctionPointer(Explosion &explosion) override {
     addArgument(explosion);
+  }
+
+  llvm::Value *getContext() override {
+    assert((cachedContextSlot ||
+            !irgen::hasTrailingAsyncErrorContextPair(IGM, outType)) &&
+           "predicate drifted: gate matched but cachedContextSlot empty");
+    if (cachedContextSlot)
+      return cachedContextSlot;
+    return super::getContext();
   }
 
   void forwardErrorResult() override {
@@ -1425,7 +1450,12 @@ public:
           errorSchema.shouldReturnTypedErrorIndirectly() ||
           outConv.hasIndirectSILResults() ||
           outConv.hasIndirectSILErrorResults()) {
-        auto *typedErrorResultPtr = origParams.claimNext();
+        assert((cachedTypedErrorSlot ||
+                !irgen::hasTrailingAsyncErrorContextPair(IGM, outType)) &&
+               "predicate drifted: gate matched but cachedTypedErrorSlot empty");
+        llvm::Value *typedErrorResultPtr =
+            cachedTypedErrorSlot ? cachedTypedErrorSlot
+                                 : origParams.claimNext();
         args.add(typedErrorResultPtr);
       }
     }
