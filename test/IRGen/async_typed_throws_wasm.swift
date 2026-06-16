@@ -2,15 +2,16 @@
 // RUN:   -disable-availability-checking | %FileCheck %s
 
 // REQUIRES: concurrency
+// REQUIRES: OS=wasip1
 
-// Verifies the async typed-throws LLVM IR layout: ind_error is placed
-// BEFORE swiftself in the entry signature so Thin and Thick callers
-// agree on the LLVM-IR position of the typed-error indirect pointer.
-// This file targets the HOST (the layout reorder applies uniformly to
-// all targets) and accepts both `swiftcc` and `swifttailcc` because
-// `SwiftAsyncCC` resolves differently per target. The wasi runtime
-// suite also covers the wasm-bytecode-level mismatch via
-// Interpreter/async_typed_throws_wasm.swift.
+// Verifies the async typed-throws LLVM IR layout on WebAssembly: ind_error is
+// placed BEFORE swiftself in the entry signature so Thin and Thick callers
+// agree on the LLVM-IR position of the typed-error indirect pointer. This
+// reorder is wasm-only (#89320); the host emits the pre-reorder layout, so this
+// test runs only in the wasi suite (where %target-swift-frontend targets
+// wasm32 with the wasm stdlib resource dir). It accepts both `swiftcc` and
+// `swifttailcc` because `SwiftAsyncCC` resolves differently per target. The
+// runtime behavior is covered by Interpreter/async_typed_throws_wasm.swift.
 
 struct LargeErr: Error {
   var tag: Int

@@ -2290,6 +2290,12 @@ void SignatureExpansion::addIndirectThrowingResult() {
 
 bool irgen::hasTrailingAsyncErrorContextPair(IRGenModule &IGM,
                                              CanSILFunctionType funcTy) {
+  // The ind_error/swiftself reorder is wasm-only (see expandAsyncEntryType).
+  // On every other target the trailing pair is NOT reordered, so the consumer
+  // sites must use their pre-reorder reading; returning false routes them there.
+  if (!IGM.Triple.isWasm())
+    return false;
+
   if (!funcTy->isAsync())
     return false;
 
@@ -2349,17 +2355,25 @@ void SignatureExpansion::expandAsyncEntryType() {
     ParamIRTypes.push_back(IGM.SwiftContextPtrTy);
   }
 
-  // Indirect typed-error pointer is placed BEFORE the swiftself/context
-  // slot so that Thin and Thick async typed-throws signatures agree on
-  // the LLVM-IR position of ind_error. Avoids the wasm END-padding swap
-  // that swapped ind_error and swiftself between Thin and Thick callers.
+  // The indirect typed-error pointer's position is target-dependent.
   //
-  // Coupled with (must update together if this ordering changes):
+  // On WebAssembly it must precede the swiftself/context slot so that Thin
+  // and Thick async typed-throws signatures agree on its LLVM-IR position
+  // despite the wasm backend END-padding swiftself/swifterror (#89320).
+  //
+  // On every other target there is no END-padding interaction and the
+  // original post-context position is correct; emitting it before the
+  // context there regresses async typed-throws (the [ind_error, swiftself]
+  // pair is mishandled in the Linux realization of the layout).
+  //
+  // Coupled with hasTrailingAsyncErrorContextPair (this file), which gates
+  // the three consumer sites on the same IGM.Triple.isWasm() condition:
   //   * AsyncCallEmission::setFromCallee
   //   * AsyncPartialApplicationForwarderEmission
   //   * AsyncNativeCCEntryPointArgumentEmission::mapAsyncParameters
-  // Shared gate: hasTrailingAsyncErrorContextPair (GenCall.h).
-  addIndirectThrowingResult();
+  const bool errorBeforeContext = IGM.Triple.isWasm();
+  if (errorBeforeContext)
+    addIndirectThrowingResult();
 
   // Context is next.
   if (hasSelfContext) {
@@ -2404,6 +2418,11 @@ void SignatureExpansion::expandAsyncEntryType() {
 
   // For now we continue to store the error result in the context to be able to
   // reuse non throwing functions.
+  //
+  // Non-wasm targets keep the pre-#89320 layout: the indirect typed-error
+  // pointer trails the swiftself/context slot (see errorBeforeContext above).
+  if (!errorBeforeContext)
+    addIndirectThrowingResult();
 
   // Witness methods have some extra parameter types.
   if (FnType->getRepresentation() ==
