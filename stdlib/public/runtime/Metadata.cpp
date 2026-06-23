@@ -3533,6 +3533,9 @@ static void initGenericClassObjCName(ClassMetadata *theClass) {
 }
 
 static bool installLazyClassNameHook() {
+#if defined(__GNUSTEP_RUNTIME__)
+  return false;
+#else
   static objc_hook_lazyClassNamer oldHook;
   auto myHook = [](Class theClass) -> const char * {
     ClassMetadata *metadata = (ClassMetadata *)theClass;
@@ -3547,6 +3550,7 @@ static bool installLazyClassNameHook() {
   }
 
   return false;
+#endif
 }
 
 SWIFT_ALLOWED_RUNTIME_GLOBAL_CTOR_BEGIN

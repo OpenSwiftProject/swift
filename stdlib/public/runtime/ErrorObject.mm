@@ -34,7 +34,11 @@
 #include "swift/Runtime/ObjCBridge.h"
 #include <Foundation/Foundation.h>
 #include <dlfcn.h>
+#if __has_include(<objc/NSObject.h>)
 #include <objc/NSObject.h>
+#elif __has_include(<Foundation/NSObject.h>)
+#import <Foundation/NSObject.h>
+#endif
 #include <objc/message.h>
 #include <objc/objc.h>
 #include <objc/runtime.h>
@@ -673,4 +677,3 @@ swift::swift_errorRelease(SwiftError *error) {
 }
 
 #endif
-

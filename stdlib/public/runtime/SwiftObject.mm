@@ -18,7 +18,11 @@
 #include "swift/Runtime/Config.h"
 
 #if SWIFT_OBJC_INTEROP
+#if __has_include(<objc/NSObject.h>)
 #include <objc/NSObject.h>
+#elif __has_include(<Foundation/NSObject.h>)
+#import <Foundation/NSObject.h>
+#endif
 #include <objc/runtime.h>
 #include <objc/message.h>
 #include <objc/objc.h>
@@ -60,7 +64,11 @@
 #if SWIFT_OBJC_INTEROP
 # import <CoreFoundation/CFBase.h> // for CFTypeID
 # import <Foundation/Foundation.h>
-# include <malloc/malloc.h>
+# if __has_include(<malloc/malloc.h>)
+#  include <malloc/malloc.h>
+# elif __has_include(<malloc.h>)
+#  include <malloc.h>
+# endif
 # include <dispatch/dispatch.h>
 #endif
 
@@ -263,8 +271,12 @@ static id _getClassDescription(Class cls) {
 }
 
 - (struct _NSZone *)zone {
+#if defined(__APPLE__) && __has_include(<malloc/malloc.h>)
   auto zone = malloc_zone_from_ptr(self);
   return (struct _NSZone *)(zone ? zone : malloc_default_zone());
+#else
+  return nullptr;
+#endif
 }
 
 - (void)doesNotRecognizeSelector: (SEL) sel {

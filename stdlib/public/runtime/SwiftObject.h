@@ -23,8 +23,12 @@
 #include <utility>
 #include "swift/Runtime/HeapObject.h"
 #include "../runtime/SwiftHashableSupport.h"
-#if SWIFT_OBJC_INTEROP
+#if SWIFT_OBJC_INTEROP && __OBJC__
+#if __has_include(<objc/NSObject.h>)
 #include <objc/NSObject.h>
+#elif __has_include(<Foundation/NSObject.h>)
+#import <Foundation/NSObject.h>
+#endif
 #endif
 
 

@@ -40,6 +40,9 @@
 #include <new>
 #include <unordered_set>
 
+extern "C" id objc_constructInstance(Class cls, void *bytes);
+extern "C" void *objc_destructInstance(id object);
+
 using namespace swift;
 using namespace swift::hashable_support;
 

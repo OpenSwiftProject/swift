@@ -36,12 +36,15 @@
 #include <cstdlib>
 #include <new>
 #if SWIFT_OBJC_INTEROP
-# include <objc/NSObject.h>
+# if __has_include(<objc/NSObject.h>)
+#  include <objc/NSObject.h>
+# endif
 # include <objc/runtime.h>
 # include <objc/message.h>
 # include <objc/objc.h>
 # include "swift/Runtime/ObjCBridge.h"
 # include <dlfcn.h>
+extern "C" void *objc_destructInstance(id object);
 #endif
 #if SWIFT_STDLIB_HAS_MALLOC_TYPE
 # include <malloc_type_private.h>

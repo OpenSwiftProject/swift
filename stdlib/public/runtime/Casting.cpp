@@ -54,7 +54,9 @@ using namespace swift::hashable_support;
 using namespace metadataimpl;
 
 #if SWIFT_OBJC_INTEROP
+#if __has_include(<objc/NSObject.h>)
 #include <objc/NSObject.h>
+#endif
 #include <objc/runtime.h>
 #include <objc/message.h>
 #include <objc/objc.h>

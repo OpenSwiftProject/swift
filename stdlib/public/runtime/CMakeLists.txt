@@ -25,6 +25,7 @@ endif()
 
 set(swift_runtime_objc_sources
     ErrorObject.mm
+    GNUstepObjCCompatibility.mm
     SwiftObject.mm
     SwiftValue.mm
     ReflectionMirrorObjC.mm

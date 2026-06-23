@@ -99,7 +99,7 @@ static void initializeDispatchEnqueueFunc(dispatch_queue_t queue, void *obj,
 
   // Always fall back to plain dispatch_async_f for back-deployed concurrency.
 #if !defined(SWIFT_CONCURRENCY_BACK_DEPLOYMENT)
-#if SWIFT_CONCURRENCY_HAS_DISPATCH_PRIVATE
+#if SWIFT_CONCURRENCY_HAS_DISPATCH_PRIVATE && !defined(__linux__)
   if (SWIFT_RUNTIME_WEAK_CHECK(dispatch_async_swift_job))
     func = SWIFT_RUNTIME_WEAK_USE(dispatch_async_swift_job);
 #elif defined(_WIN32)
@@ -140,7 +140,9 @@ static std::atomic<dispatch_queue_t> globalQueueCache[globalQueueCacheCount];
 #if defined(__APPLE__) && !defined(SWIFT_CONCURRENCY_BACK_DEPLOYMENT)
 static constexpr size_t dispatchQueueCooperativeFlag = 4;
 #else
+#if !SWIFT_CONCURRENCY_HAS_DISPATCH_PRIVATE
 extern "C" void dispatch_queue_set_width(dispatch_queue_t dq, long width);
+#endif
 #endif
 
 static dispatch_queue_t getGlobalQueue(SwiftJobPriority priority) {
@@ -160,7 +162,9 @@ static dispatch_queue_t getGlobalQueue(SwiftJobPriority priority) {
     return queue;
 
 #if defined(SWIFT_CONCURRENCY_BACK_DEPLOYMENT) || !defined(__APPLE__)
+#ifndef DISPATCH_QUEUE_WIDTH_MAX_LOGICAL_CPUS
   const int DISPATCH_QUEUE_WIDTH_MAX_LOGICAL_CPUS = -3;
+#endif
 
   // Create a new cooperative concurrent queue and swap it in.
   dispatch_queue_attr_t newQueueAttr = dispatch_queue_attr_make_with_qos_class(
