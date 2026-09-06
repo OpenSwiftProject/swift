@@ -1,0 +1,4 @@
+module GNUstepSelectors {
+  header "Selectors.h"
+  export *
+}

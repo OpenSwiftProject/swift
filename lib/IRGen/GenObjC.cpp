@@ -284,6 +284,39 @@ llvm::Constant *IRGenModule::getAddrOfObjCMethodName(StringRef selector) {
   return address;
 }
 
+/// Emit the untyped GNUstep ABI v2 selector shared with Clang's @selector.
+/// The embedded Clang code generator emits __objc_load at finalization, which
+/// registers all records in __objc_selectors before this image's code runs.
+static llvm::Constant *getGNUstepSelector(IRGenModule &IGM, StringRef selector) {
+  auto symbol = (llvm::Twine(".objc_selector_") + selector + "_").str();
+  if (auto *global = IGM.Module.getNamedGlobal(symbol))
+    return global;
+
+  auto nameSymbol = (llvm::Twine(".objc_sel_name_") + selector).str();
+  auto *name = IGM.Module.getNamedGlobal(nameSymbol);
+  if (!name) {
+    auto *init = llvm::ConstantDataArray::getString(IGM.getLLVMContext(), selector);
+    name = new llvm::GlobalVariable(IGM.Module, init->getType(), true,
+                                   llvm::GlobalValue::LinkOnceODRLinkage, init,
+                                   nameSymbol);
+    name->setVisibility(llvm::GlobalValue::HiddenVisibility);
+    name->setComdat(IGM.Module.getOrInsertComdat(nameSymbol));
+  }
+
+  // libobjc2 replaces the first field (the name) with a selector index. A SEL
+  // is the address of this writable record, not a load of its first field.
+  auto *type = llvm::StructType::get(IGM.Int8PtrTy, IGM.Int8PtrTy);
+  auto *init = llvm::ConstantStruct::get(
+      type, {name, llvm::ConstantPointerNull::get(IGM.Int8PtrTy)});
+  auto *global = new llvm::GlobalVariable(
+      IGM.Module, type, false, llvm::GlobalValue::LinkOnceODRLinkage, init, symbol);
+  global->setVisibility(llvm::GlobalValue::HiddenVisibility);
+  global->setComdat(IGM.Module.getOrInsertComdat(symbol));
+  global->setSection("__objc_selectors");
+  global->setAlignment(llvm::Align(IGM.getPointerAlignment().getValue()));
+  return global;
+}
+
 /// Get or create an Objective-C selector reference.  Always returns
 /// an i8**.  The design is that the compiler will emit a load of this
 /// pointer, and the linker will ensure that pointer is unique.
@@ -292,20 +325,25 @@ llvm::Constant *IRGenModule::getAddrOfObjCSelectorRef(StringRef selector) {
   auto &entry = ObjCSelectorRefs[selector];
   if (entry) return entry;
 
-  // If not, create it.  The initializer is just a pointer to the
-  // method name.  Note that the label here is unimportant, so we
-  // choose something descriptive to make the IR readable.
-  auto init = getAddrOfObjCMethodName(selector);
-  auto global = new llvm::GlobalVariable(Module, init->getType(), false,
+  // Apple starts with a method name for runtime fixup; GNUstep points at a
+  // native selector record. The private reference label is only descriptive.
+  bool isGNUstep = Context.LangOpts.ObjCRuntimeVendorKind ==
+                   ObjCRuntimeVendor::GNUstep;
+  auto init = isGNUstep ? getGNUstepSelector(*this, selector)
+                       : getAddrOfObjCMethodName(selector);
+  // GNUstep's indirection is compiler-private and constant: the runtime mutates
+  // the selector record, never this pointer. Optimizers can fold its loads.
+  auto global = new llvm::GlobalVariable(Module, init->getType(), isGNUstep,
                                          llvm::GlobalValue::PrivateLinkage,
                                          init,
                                 llvm::Twine("\01L_selector(") + selector + ")");
-  global->setExternallyInitialized(true);
+  global->setExternallyInitialized(!isGNUstep);
   global->setAlignment(llvm::MaybeAlign(getPointerAlignment().getValue()));
 
   // This section name is magical for the Darwin static and dynamic linkers.
-  global->setSection(GetObjCSectionName("__objc_selrefs",
-                                        "literal_pointers,no_dead_strip"));
+  if (!isGNUstep)
+    global->setSection(GetObjCSectionName("__objc_selrefs",
+                                          "literal_pointers,no_dead_strip"));
 
   // Make sure that this reference does not get optimized away.
   addCompilerUsedGlobal(global);

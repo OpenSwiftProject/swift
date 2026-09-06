@@ -6648,6 +6648,13 @@ void irgen::emitSpecializedGenericEnumMetadata(IRGenModule &IGM, CanType type,
 }
 
 llvm::Value *IRGenFunction::emitObjCSelectorRefLoad(StringRef selector) {
+  // JIT code does not go through the ELF image loader. Register the name, not
+  // the address of an unregistered GNUstep selector record.
+  if (IGM.IRGen.Opts.UseJIT &&
+      IGM.Context.LangOpts.ObjCRuntimeVendorKind == ObjCRuntimeVendor::GNUstep)
+    return Builder.CreateCall(IGM.getObjCSelRegisterNameFunctionPointer(),
+                              IGM.getAddrOfObjCMethodName(selector));
+
   llvm::Constant *loadSelRef = IGM.getAddrOfObjCSelectorRef(selector);
   llvm::Value *loadSel = Builder.CreateLoad(
       Address(loadSelRef, IGM.Int8PtrTy, IGM.getPointerAlignment()));
