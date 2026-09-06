@@ -1632,6 +1632,30 @@ static bool ParseLangArgs(LangOptions &Opts, ArgList &Args,
       Args.hasFlag(OPT_enable_objc_interop, OPT_disable_objc_interop,
                    Target.isOSDarwin() && !Opts.hasFeature(Feature::Embedded));
 
+  if (const Arg *A = Args.getLastArg(OPT_objc_runtime_vendor)) {
+    auto vendor =
+        llvm::StringSwitch<std::optional<ObjCRuntimeVendor>>(A->getValue())
+            .Case("apple", ObjCRuntimeVendor::Apple)
+            .Case("gnustep", ObjCRuntimeVendor::GNUstep)
+            .Default(std::nullopt);
+    if (!vendor) {
+      Diags.diagnose(SourceLoc(), diag::error_invalid_arg_value,
+                    A->getAsString(Args), A->getValue());
+      HadError = true;
+    } else if (!Opts.EnableObjCInterop) {
+      Diags.diagnose(
+          SourceLoc(), diag::error_objc_runtime_vendor_requires_objc_interop);
+      HadError = true;
+    } else if (*vendor == ObjCRuntimeVendor::GNUstep &&
+               !Target.isOSBinFormatELF()) {
+      Diags.diagnose(SourceLoc(), diag::error_unsupported_opt_for_target,
+                    A->getAsString(Args), Target.str());
+      HadError = true;
+    } else {
+      Opts.ObjCRuntimeVendorKind = *vendor;
+    }
+  }
+
   if (Args.hasArg(OPT_experimental_c_foreign_reference_types))
     Diags.diagnose(SourceLoc(), diag::warn_flag_deprecated,
                    "-experimental-c-foreign-reference-types");

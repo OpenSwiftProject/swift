@@ -4900,6 +4900,22 @@ Address IRGenModule::getAddrOfObjCClassRef(ClassDecl *theClass) {
   // Define it lazily.
   if (auto global = dyn_cast<llvm::GlobalVariable>(addr)) {
     if (global->isDeclaration()) {
+      if (Context.LangOpts.ObjCRuntimeVendorKind == ObjCRuntimeVendor::GNUstep &&
+          theClass->hasClangNode() && !theClass->getObjCImplementationDecl()) {
+        if (theClass->isWeakImported(getSwiftModule())) {
+          // A missing weak class has no exported reference slot. Keep a local
+          // slot whose weak class-symbol initializer can resolve to null.
+          global->setLinkage(llvm::GlobalVariable::PrivateLinkage);
+          global->setInitializer(getAddrOfObjCClass(theClass, NotForDefinition));
+        } else {
+          // GNUstep ABI v2 exports the indirection from the translation unit
+          // defining the class. Do not emit a Darwin-style local classref.
+          global->setLinkage(llvm::GlobalVariable::ExternalLinkage);
+          global->setVisibility(llvm::GlobalVariable::DefaultVisibility);
+          global->setDSOLocal(false);
+        }
+        return Address(addr, ObjCClassPtrTy, entity.getAlignment(*this));
+      }
       global->setSection(GetObjCSectionName("__objc_classrefs",
                                             "regular,no_dead_strip"));
       global->setLinkage(llvm::GlobalVariable::PrivateLinkage);

@@ -1,0 +1,4 @@
+module GNUstepClassSymbols {
+  header "Classes.h"
+  export *
+}

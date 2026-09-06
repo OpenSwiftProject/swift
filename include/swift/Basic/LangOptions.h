@@ -127,6 +127,12 @@ namespace swift {
     Complete,
   };
 
+  /// The Objective-C runtime ABI family used for interop.
+  enum class ObjCRuntimeVendor : uint8_t {
+    Apple,
+    GNUstep,
+  };
+
   /// A collection of options that affect the language dialect and
   /// provide compiler debugging facilities.
   class LangOptions final {
@@ -326,6 +332,9 @@ namespace swift {
     /// Enable Objective-C Runtime interop code generation and build
     /// configuration options.
     bool EnableObjCInterop = true;
+
+    /// Preserve the historical Apple ABI unless GNUstep is selected explicitly.
+    ObjCRuntimeVendor ObjCRuntimeVendorKind = ObjCRuntimeVendor::Apple;
 
     /// Enable C++ interop code generation and build configuration
     /// options. Disabled by default because there is no way to control the
@@ -816,7 +825,8 @@ namespace swift {
       SmallString<16> Scratch;
       llvm::raw_svector_ostream OS(Scratch);
       OS << EffectiveLanguageVersion;
-      return llvm::hash_combine(Target.str(), OS.str());
+      return llvm::hash_combine(Target.str(), OS.str(), EnableObjCInterop,
+                                static_cast<uint8_t>(ObjCRuntimeVendorKind));
     }
 
     /// Return a hash code of any components from these options that should
