@@ -1,0 +1,46 @@
+// RUN: %target-swift-frontend -target x86_64-unknown-linux-gnu -enable-objc-interop -objc-runtime-vendor=gnustep -emit-ir %s | %FileCheck %s --check-prefix=GNUSTEP --implicit-check-not=objc_selrefs --implicit-check-not=sel_registerName
+// RUN: %target-swift-frontend -target aarch64-unknown-linux-gnu -enable-objc-interop -objc-runtime-vendor=gnustep -emit-ir %s | %FileCheck %s --check-prefix=GNUSTEP --implicit-check-not=objc_selrefs --implicit-check-not=sel_registerName
+// RUN: %target-swift-frontend -target aarch64-unknown-linux-gnu -enable-objc-interop -objc-runtime-vendor=gnustep -O -emit-ir %s | %FileCheck %s --check-prefix=OPT --implicit-check-not=objc_selrefs --implicit-check-not=sel_registerName
+// RUN: %target-swift-frontend -target x86_64-unknown-linux-gnu -enable-objc-interop -objc-runtime-vendor=gnustep -use-jit -emit-ir %s | %FileCheck %s --check-prefix=JIT --implicit-check-not=objc_selrefs --implicit-check-not=.objc_selector_help
+// RUN: %target-swift-frontend -target x86_64-unknown-linux-gnu -enable-objc-interop -emit-ir %s | %FileCheck %s --check-prefix=APPLE --implicit-check-not=__objc_selectors
+// RUN: %target-swift-frontend -target x86_64-apple-macosx10.15 -enable-objc-interop -emit-ir %s | %FileCheck %s --check-prefix=APPLE --implicit-check-not=__objc_selectors
+
+sil_stage canonical
+import Builtin
+
+// This SIL instruction is the lowering of a Swift #selector expression. It
+// must work even in an image containing no Objective-C implementation objects.
+// GNUSTEP-DAG: @".objc_sel_name_help:me:" = linkonce_odr hidden constant [9 x i8] c"help:me:\00", comdat
+// GNUSTEP-DAG: @".objc_selector_help:me:_" = linkonce_odr hidden global { ptr, ptr } { ptr @".objc_sel_name_help:me:", ptr null }, section "__objc_selectors", comdat, align 8
+// GNUSTEP-DAG: @"\01L_selector(help:me:)" = private constant ptr @".objc_selector_help:me:_", align 8
+// GNUSTEP-DAG: @.objc_init = linkonce_odr hidden global {{.*}}ptr @__start___objc_selectors, ptr @__stop___objc_selectors
+// GNUSTEP-DAG: @.objc_ctor = linkonce hidden global ptr @.objcv2_load_function, section ".init_array", comdat
+// APPLE-DAG: @"\01L_selector(help:me:)" = private externally_initialized global ptr @"\01L_selector_data(help:me:)", section
+
+// GNUSTEP-LABEL: define{{.*}} @objc_selector_literal()
+// GNUSTEP: [[SEL:%.*]] = load ptr, ptr @"\01L_selector(help:me:)"
+// GNUSTEP: ret ptr [[SEL]]
+// APPLE-LABEL: define{{.*}} @objc_selector_literal()
+// APPLE: load ptr, ptr @"\01L_selector(help:me:)"
+// JIT-LABEL: define{{.*}} @objc_selector_literal()
+// JIT: [[SEL:%.*]] = call ptr @sel_registerName(ptr @"\01L_selector_data(help:me:)")
+// JIT: ret ptr [[SEL]]
+// OPT-LABEL: define{{.*}} @objc_selector_literal()
+// OPT: ret ptr @".objc_selector_help:me:_"
+sil @objc_selector_literal : $@convention(thin) () -> Builtin.RawPointer {
+bb0:
+  %0 = string_literal objc_selector "help:me:"
+  return %0 : $Builtin.RawPointer
+}
+
+// Reusing a selector must reuse its record, not emit a renamed duplicate.
+// GNUSTEP-LABEL: define{{.*}} @objc_selector_again()
+// GNUSTEP: load ptr, ptr @"\01L_selector(help:me:)"
+sil @objc_selector_again : $@convention(thin) () -> Builtin.RawPointer {
+bb0:
+  %0 = string_literal objc_selector "help:me:"
+  return %0 : $Builtin.RawPointer
+}
+
+// GNUSTEP-LABEL: define linkonce_odr hidden void @.objcv2_load_function()
+// GNUSTEP: call void @__objc_load(ptr @.objc_init)
