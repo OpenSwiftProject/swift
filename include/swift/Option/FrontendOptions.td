@@ -352,6 +352,11 @@ let Flags = [FrontendOption, NoDriverOption, HelpHidden, ModuleInterfaceOption] 
     Flag<["-"], "disable-objc-interop">,
     HelpText<"Disable Objective-C interop code generation and config directives">;
 
+  def objc_runtime_vendor :
+    Joined<["-"], "objc-runtime-vendor=">,
+    MetaVarName<"<apple|gnustep>">,
+    HelpText<"Select the Objective-C runtime ABI family (GNUstep requires ELF)">;
+
   def enable_experimental_opaque_type_erasure :
     Flag<["-"], "enable-experimental-opaque-type-erasure">,
     HelpText<"Type-erases opaque types that conform to @_typeEraser protocols">;

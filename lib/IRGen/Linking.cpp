@@ -20,9 +20,11 @@
 #include "swift/AST/ASTMangler.h"
 #include "swift/AST/IRGenOptions.h"
 #include "swift/Basic/Assertions.h"
+#include "swift/Basic/LangOptions.h"
 #include "swift/ClangImporter/ClangModule.h"
 #include "swift/SIL/SILGlobalVariable.h"
 #include "swift/SIL/FormalLinkage.h"
+#include "clang/AST/DeclObjC.h"
 #include "llvm/TargetParser/Triple.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/raw_ostream.h"
@@ -379,21 +381,35 @@ std::string LinkEntity::mangleAsString(ASTContext &Ctx) const {
     return mangler.mangleCoroutineContinuationPrototype(
                                             cast<SILFunctionType>(getType()));
 
-    // An Objective-C class reference reference. The symbol is private, so
-    // the mangling is unimportant; it should just be readable in LLVM IR.
+    // An Objective-C class reference slot. Apple slots are private, while
+    // imported GNUstep classes use the slot exported by the class provider.
   case Kind::ObjCClassRef: {
+    auto *classDecl = cast<ClassDecl>(getDecl());
     llvm::SmallString<64> tempBuffer;
-    StringRef name = cast<ClassDecl>(getDecl())->getObjCRuntimeName(tempBuffer);
+    StringRef name = classDecl->getObjCRuntimeName(tempBuffer);
     std::string Result("OBJC_CLASS_REF_$_");
+    if (Ctx.LangOpts.ObjCRuntimeVendorKind == ObjCRuntimeVendor::GNUstep &&
+        classDecl->hasClangNode() && !classDecl->getObjCImplementationDecl()) {
+      // GNUstep's Clang ABI spells linker symbols with the interface name,
+      // even when objc_runtime_name supplies a different runtime name.
+      name = cast<clang::ObjCInterfaceDecl>(classDecl->getClangDecl())->getName();
+      Result = "._OBJC_REF_CLASS_";
+    }
     Result.append(name.data(), name.size());
     return Result;
   }
 
     // An Objective-C class reference;  not a swift mangling.
   case Kind::ObjCClass: {
+    auto *classDecl = cast<ClassDecl>(getDecl());
     llvm::SmallString<64> TempBuffer;
-    StringRef Name = cast<ClassDecl>(getDecl())->getObjCRuntimeName(TempBuffer);
+    StringRef Name = classDecl->getObjCRuntimeName(TempBuffer);
     std::string Result("OBJC_CLASS_$_");
+    if (Ctx.LangOpts.ObjCRuntimeVendorKind == ObjCRuntimeVendor::GNUstep &&
+        classDecl->hasClangNode() && !classDecl->getObjCImplementationDecl()) {
+      Name = cast<clang::ObjCInterfaceDecl>(classDecl->getClangDecl())->getName();
+      Result = "._OBJC_CLASS_";
+    }
     Result.append(Name.data(), Name.size());
     return Result;
   }
